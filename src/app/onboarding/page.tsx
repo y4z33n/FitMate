@@ -6,12 +6,8 @@ export default function OnboardingPage() {
       <div className="container mx-auto px-4">
         <div className="max-w-2xl mx-auto">
           <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-500 to-blue-700">
-              Welcome to FitMate
-            </h1>
-            <p className="text-gray-600 mt-2">
-              Let's personalize your fitness journey
-            </p>
+            <h1 className="text-4xl font-bold text-white tracking-wide mb-2">Welcome to FitMate</h1>
+            <p className="text-gray-400">Let&apos;s get to know you better</p>
           </div>
           <OnboardingForm />
         </div>

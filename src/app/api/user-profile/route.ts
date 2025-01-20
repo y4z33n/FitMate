@@ -1,88 +1,66 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '../auth/[...nextauth]/route';
-import connectDB from '@/lib/mongodb';
-import UserProfile from '@/models/UserProfile';
-import { Session } from 'next-auth';
+import clientPromise from '@/lib/mongodb-adapter';
 
-interface CustomSession extends Session {
-  user: {
-    id: string;
-    name?: string | null;
-    email?: string | null;
-    image?: string | null;
-  };
-}
-
-export async function POST(req: Request) {
+export async function GET() {
   try {
-    const session = await getServerSession(authOptions) as CustomSession | null;
-    
+    const session = await getServerSession(authOptions);
     if (!session?.user?.id) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+      return new NextResponse('Unauthorized', { status: 401 });
     }
 
-    const body = await req.json();
-    await connectDB();
+    const client = await clientPromise;
+    const database = client.db('fitmate');
+    const userProfile = await database.collection('userProfiles').findOne({ userId: session.user.id });
 
-    // Check if profile already exists
-    const existingProfile = await UserProfile.findOne({ userId: session.user.id });
-    if (existingProfile) {
-      // Update existing profile
-      const updatedProfile = await UserProfile.findOneAndUpdate(
-        { userId: session.user.id },
-        { ...body, updatedAt: new Date() },
-        { new: true }
-      );
-      return NextResponse.json(updatedProfile);
+    if (!userProfile) {
+      return new NextResponse(null, { status: 404 });
     }
 
-    // Create new profile
-    const profile = await UserProfile.create({
-      ...body,
-      userId: session.user.id,
-    });
-
-    return NextResponse.json(profile);
+    return NextResponse.json(userProfile);
   } catch (error) {
-    console.error('Error in user profile API:', error);
-    return NextResponse.json(
-      { error: 'Failed to save user profile' },
-      { status: 500 }
-    );
+    console.error('Error fetching user profile:', error);
+    return new NextResponse('Internal Server Error', { status: 500 });
   }
 }
 
-export async function GET(req: Request) {
+export async function POST(request: Request) {
   try {
-    const session = await getServerSession(authOptions) as CustomSession | null;
-    
+    const session = await getServerSession(authOptions);
     if (!session?.user?.id) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+      return new NextResponse('Unauthorized', { status: 401 });
     }
 
-    await connectDB();
-    const profile = await UserProfile.findOne({ userId: session.user.id });
-    
-    if (!profile) {
-      return NextResponse.json(
-        { error: 'Profile not found' },
-        { status: 404 }
-      );
+    const profile = await request.json();
+    const client = await clientPromise;
+    const database = client.db('fitmate');
+
+    // Validate required fields
+    const requiredFields = ['name', 'age', 'weight', 'height', 'fitnessGoals', 'fitnessLevel'];
+    for (const field of requiredFields) {
+      if (!profile[field]) {
+        return new NextResponse(`Missing required field: ${field}`, { status: 400 });
+      }
     }
 
-    return NextResponse.json(profile);
-  } catch (error) {
-    console.error('Error in user profile API:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch user profile' },
-      { status: 500 }
+    // Add userId and timestamps
+    const userProfile = {
+      ...profile,
+      userId: session.user.id,
+      updatedAt: new Date(),
+    };
+
+    // Update or insert the profile
+    await database.collection('userProfiles').updateOne(
+      { userId: session.user.id },
+      { $set: userProfile },
+      { upsert: true }
     );
+
+    return NextResponse.json({ message: 'Profile updated successfully' });
+  } catch (error) {
+    console.error('Error updating user profile:', error);
+    return new NextResponse('Internal Server Error', { status: 500 });
   }
 } 

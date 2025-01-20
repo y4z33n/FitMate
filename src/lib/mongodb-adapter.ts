@@ -1,10 +1,18 @@
 import { MongoClient } from 'mongodb';
 
 if (!process.env.MONGODB_URI) {
-  throw new Error('Please add your MongoDB URI to .env.local');
+  throw new Error('Please define the MONGODB_URI environment variable inside .env.local');
 }
 
 const uri = process.env.MONGODB_URI;
+const options = {
+  maxPoolSize: 10,
+  serverSelectionTimeoutMS: 5000,
+  socketTimeoutMS: 45000,
+  connectTimeoutMS: 10000,
+  directConnection: true,
+};
+
 let client: MongoClient;
 let clientPromise: Promise<MongoClient>;
 
@@ -16,26 +24,15 @@ if (process.env.NODE_ENV === 'development') {
   };
 
   if (!globalWithMongo._mongoClientPromise) {
-    client = new MongoClient(uri);
-    globalWithMongo._mongoClientPromise = client.connect().then((client) => {
-      console.log('Connected to MongoDB');
-      return client;
-    }).catch((error) => {
-      console.error('Error connecting to MongoDB:', error);
-      throw error;
-    });
+    client = new MongoClient(uri, options);
+    globalWithMongo._mongoClientPromise = client.connect();
   }
   clientPromise = globalWithMongo._mongoClientPromise;
 } else {
   // In production mode, it's best to not use a global variable.
-  client = new MongoClient(uri);
-  clientPromise = client.connect().then((client) => {
-    console.log('Connected to MongoDB');
-    return client;
-  }).catch((error) => {
-    console.error('Error connecting to MongoDB:', error);
-    throw error;
-  });
+  client = new MongoClient(uri, options);
+  clientPromise = client.connect();
 }
 
+// Export a module-scoped MongoClient promise
 export default clientPromise;

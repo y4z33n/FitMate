@@ -1,0 +1,24 @@
+# Build output
+.next
+out
+dist
+build
+
+# Dependencies
+node_modules
+
+# Cache
+.cache
+.eslintcache
+
+# Environment
+.env*
+
+# TypeScript
+*.d.ts
+*.ts
+*.tsx
+
+# Misc
+.DS_Store
+*.log 

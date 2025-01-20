@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { Message } from '@/types/chat';
 
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -55,7 +56,7 @@ Interaction Guidelines:
    - Account for fitness goals
    - Provide practical examples
    - Include timing recommendations
-
+   
 Safety First:
 - Always consider medical conditions
 - Recommend proper form
@@ -63,7 +64,7 @@ Safety First:
 - Encourage gradual progression
 - Remind about warm-ups and recovery
 
-Remember: You are having a natural conversation. Be engaging and personable while keeping the focus on helping them achieve their fitness goals safely and effectively.`;
+Remember: You are having a natural conversation. Be engaging and personable while keeping the focus on helping them achieve their fitness goals safely and effectively. Please keep the thinking process to yourself, do not reply your thinking process, just give your reply`;
 
 interface UserProfile {
   name: string;
@@ -79,14 +80,9 @@ interface UserProfile {
   availableTime: number;
 }
 
-interface Message {
-  role: string;
-  content: string;
-}
-
 function buildPrompt(message: string, previousMessages: Message[], userProfile?: UserProfile): string {
   const MAX_CONTEXT_LENGTH = 5;
-  const contextualMessages = previousMessages
+  const messages = previousMessages
     .slice(-MAX_CONTEXT_LENGTH)
     .map(msg => `${msg.role}: ${msg.content}`)
     .join('\n');
@@ -113,7 +109,7 @@ Remember to tailor all advice to this user's specific profile, considering their
     enhancedSystemPrompt = `${SYSTEM_PROMPT}\n\n${profileContext}`;
   }
 
-  return enhancedSystemPrompt;
+  return `${enhancedSystemPrompt}\n\nPrevious Messages:\n${messages}\n\nCurrent Message: ${message}`;
 }
 
 const FITNESS_KEYWORDS = [
@@ -135,10 +131,85 @@ function injectFitnessContext(message: string): string {
   return message;
 }
 
+if (!process.env.OPENROUTER_API_KEY) {
+  throw new Error('Missing OPENROUTER_API_KEY environment variable');
+}
+
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+
+export async function OpenRouterStream(
+  messages: Message[],
+  model: string = 'google/gemini-pro'
+) {
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+        'HTTP-Referer': 'https://fitmate.vercel.app',
+        'X-Title': 'FitMate',
+      },
+      body: JSON.stringify({
+        model,
+        messages: messages.map(message => ({
+          role: message.role,
+          content: message.content,
+        })),
+        stream: true,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenRouter API error: ${response.status}`);
+    }
+
+    return response;
+  } catch (error) {
+    console.error('Error in OpenRouter stream:', error);
+    throw error;
+  }
+}
+
+export async function OpenRouterChat(
+  messages: Message[],
+  model: string = 'google/gemini-pro'
+) {
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+        'HTTP-Referer': 'https://fitmate.vercel.app',
+        'X-Title': 'FitMate',
+      },
+      body: JSON.stringify({
+        model,
+        messages: messages.map(message => ({
+          role: message.role,
+          content: message.content,
+        })),
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenRouter API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.choices[0].message.content;
+  } catch (error) {
+    console.error('Error in OpenRouter chat:', error);
+    throw error;
+  }
+}
+
 export async function getFitnessResponse(
   message: string,
   previousMessages: Message[] = [],
-  userProfile?: UserProfile
+  userProfile?: UserProfile,
+  model?: string
 ) {
   try {
     const enhancedSystemPrompt = buildPrompt(message, previousMessages, userProfile);
@@ -156,18 +227,10 @@ export async function getFitnessResponse(
       }
     ];
 
-    if (!process.env.OPENROUTER_API_KEY) {
-      throw new Error('OpenRouter API key is not configured');
-    }
-
-    if (!process.env.OPENROUTER_MODEL) {
-      throw new Error('OpenRouter model is not configured');
-    }
-
-    console.log('Using model:', process.env.OPENROUTER_MODEL);
+    console.log('Using model:', model || process.env.OPENROUTER_MODEL);
 
     const requestBody = {
-      model: process.env.OPENROUTER_MODEL,
+      model: model || process.env.OPENROUTER_MODEL,
       messages: conversationHistory,
       temperature: 0.7,
       max_tokens: 1000,
@@ -193,7 +256,7 @@ export async function getFitnessResponse(
 
     if (!response.data?.choices?.[0]?.message?.content) {
       console.error('Invalid response structure. Full response:', JSON.stringify(response.data, null, 2));
-      throw new Error('Invalid or empty response from OpenRouter');
+      throw new Error('High demand at the moment. Please try again in a few seconds.');
     }
 
     const content = response.data.choices[0].message.content;
@@ -224,7 +287,7 @@ export async function getFitnessResponse(
       }
       
       if (error.response?.status === 429) {
-        throw new Error('Too many requests. Please wait a moment and try again.');
+        throw new Error('High demand at the moment. Please try again in a few seconds.');
       }
 
       if (error.response?.status === 401 || error.response?.status === 403) {
@@ -232,9 +295,9 @@ export async function getFitnessResponse(
       }
 
       if (error.response?.data?.error?.message) {
-        throw new Error(`OpenRouter error: ${error.response.data.error.message}`);
+        throw new Error(`High demand at the moment. Please try again in a few seconds.`);
       }
     }
-    throw error instanceof Error ? error : new Error('Failed to get response from fitness assistant');
+    throw error instanceof Error ? error : new Error('High demand at the moment. Please try again in a few seconds.');
   }
 } 

@@ -1,70 +1,46 @@
-import NextAuth, { AuthOptions } from 'next-auth';
-import GoogleProvider from 'next-auth/providers/google';
+import NextAuth from 'next-auth';
 import { MongoDBAdapter } from '@auth/mongodb-adapter';
+import GoogleProvider from 'next-auth/providers/google';
 import clientPromise from '@/lib/mongodb-adapter';
 
-export const authOptions: AuthOptions = {
+if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+  throw new Error('Missing Google OAuth credentials');
+}
+
+export const authOptions = {
   providers: [
     GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID || '',
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
-      authorization: {
-        params: {
-          prompt: "consent",
-          access_type: "offline",
-          response_type: "code"
-        }
-      }
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
     }),
   ],
-  adapter: MongoDBAdapter(clientPromise),
+  adapter: MongoDBAdapter(clientPromise, {
+    databaseName: 'fitmate',
+    collections: {
+      Users: 'users',
+      Accounts: 'accounts',
+      Sessions: 'sessions',
+      VerificationTokens: 'verification_tokens',
+    },
+  }),
+  session: {
+    strategy: 'database',
+    maxAge: 30 * 24 * 60 * 60, // 30 days
+    updateAge: 24 * 60 * 60, // 24 hours
+  },
   callbacks: {
-    async signIn({ user, account, profile }) {
-      if (user) {
-        user.id = user.id || profile?.sub;
+    async session({ session, user }) {
+      if (session?.user) {
+        session.user.id = user.id;
       }
-      return true;
-    },
-    async jwt({ token, user, account, profile }) {
-      if (user) {
-        token.id = user.id;
-        token.email = user.email;
-      }
-      return token;
-    },
-    async session({ session, token, user }) {
-      if (session.user) {
-        session.user.id = token.id as string;
-      }
-      console.log("Session in callback:", session);
       return session;
     },
   },
-  events: {
-    async signIn(message) {
-      console.log('Sign in event:', message);
-    },
-    async createUser(message) {
-      console.log('Create user event:', message);
-    },
-    async linkAccount(message) {
-      console.log('Link account event:', message);
-    },
-    async session(message) {
-      console.log('Session event:', message);
-    }
-  },
-  debug: true,
-  session: {
-    strategy: 'jwt',
-    maxAge: 30 * 24 * 60 * 60, // 30 days
-  },
   pages: {
-    signIn: '/auth/signin',
+    signIn: '/signin',
   },
-  secret: process.env.NEXTAUTH_SECRET,
+  debug: process.env.NODE_ENV === 'development',
 };
 
 const handler = NextAuth(authOptions);
-
 export { handler as GET, handler as POST };
